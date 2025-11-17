@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Paws & Preferences</title>
+<style>
+html, body {
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    margin: 0;
+    font-family: Arial, sans-serif;
+    overflow: hidden;
+    background: linear-gradient(135deg, #A6F0F9, #D6FAE0);
+}
+
+#instructions {
+    text-align: center;
+    margin: 20px 0;
+}
+#instructions h1 { margin: 0; font-size: 28px; color: #333; }
+#instructions p { margin: 5px 0 0 0; font-size: 16px; color: #555; }
+
+#board {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.card {
+    width: 320px;
+    height: 420px;
+    max-width: 90%;
+    max-height: 90%;
+    border-radius: 25px;
+    box-shadow: 0px 10px 30px rgba(0,0,0,0.15);
+    background-color: white;
+    background-size: cover;
+    background-position: center;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.95);
+    transition: transform 0.2s ease-out;
+    overflow: hidden;
+}
+
+.card-header {
+    height: 80px;
+    background: rgba(255,255,255,0.8);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 18px;
+    border-bottom-left-radius: 25px;
+    border-bottom-right-radius: 25px;
+}
+
+.card .like, .card .dislike {
+    position: absolute;
+    font-size: 50px;
+    font-weight: bold;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.card .like { top: 15px; left: 15px; color: #4CAF50; transform: rotate(-20deg); }
+.card .dislike { top: 15px; right: 15px; color: #FF3B30; transform: rotate(20deg); }
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.5); }
+    100% { transform: scale(1); }
+}
+
+#summary {
+    display: none;
+    text-align: center;
+    margin-top: 20px;
+    color: #333;
+}
+
+#liked-cats img {
+    width: 100px;
+    height: 100px;
+    border-radius: 12px;
+    margin: 5px;
+    object-fit: cover;
+}
+
+@media (max-width: 768px) { .card { width: 260px; height: 350px; } .card .like, .card .dislike { font-size: 40px; } }
+@media (max-width: 480px) { .card { width: 200px; height: 300px; } .card .like, .card .dislike { font-size: 35px; } }
+</style>
+</head>
+<body>
+
+<div id="instructions">
+    <h1>Paws & Preferences</h1>
+    <p>Swipe right to like ❤️, swipe left to dislike ❌</p>
+</div>
+
+<div id="board"></div>
+
+<div id="summary">
+    <h2>You liked <span id="like-count">0</span> cats!</h2>
+    <div id="liked-cats"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+
+<script>
+// 10 random cats from Cataas
+const cats = [];
+for (let i = 1; i <= 10; i++) {
+    cats.push(`https://cataas.com/cat?${Date.now()}-${i}`);
+}
+
+let likedCats = [];
+
+class Carousel {
+    constructor(board, cats) {
+        this.board = board;
+        this.cats = [...cats];
+        this.pushCards();
+        this.handle();
+    }
+
+    pushCards() {
+        this.cats.reverse().forEach(url => {
+            const card = document.createElement('div');
+            card.classList.add('card');
+            card.style.backgroundImage = `url('${url}')`;
+
+            const header = document.createElement('div');
+            header.classList.add('card-header');
+            header.innerText = "Cat Profile";
+            card.appendChild(header);
+
+            const likeIcon = document.createElement('div');
+            likeIcon.classList.add('like');
+            likeIcon.innerText = '❤️';
+            card.appendChild(likeIcon);
+
+            const dislikeIcon = document.createElement('div');
+            dislikeIcon.classList.add('dislike');
+            dislikeIcon.innerText = '❌';
+            card.appendChild(dislikeIcon);
+
+            this.board.insertBefore(card, this.board.firstChild);
+        });
+    }
+
+    handle() {
+        this.cards = this.board.querySelectorAll('.card');
+        this.topCard = this.cards[this.cards.length - 1];
+        this.nextCard = this.cards[this.cards.length - 2];
+        if (!this.topCard) return;
+
+        this.topCard.style.transform = 'translate(-50%, -50%) rotate(0deg) scale(1)';
+        if (this.hammer) this.hammer.destroy();
+        this.hammer = new Hammer(this.topCard);
+        this.hammer.add(new Hammer.Pan({ threshold: 0 }));
+        this.hammer.on('pan', e => this.onPan(e));
+    }
+
+    onPan(e) {
+        const likeIcon = this.topCard.querySelector('.like');
+        const dislikeIcon = this.topCard.querySelector('.dislike');
+
+        if (!this.isPanning) {
+            this.isPanning = true;
+            if (this.topCard.actionTaken) return;
+            this.startPosX = 0;
+            this.startPosY = 0;
+            this.topCard.style.transition = "none";
+            if (this.nextCard) this.nextCard.style.transition = "none";
+            const bounds = this.topCard.getBoundingClientRect();
+            this.isDraggingFrom = (e.center.y - bounds.top) > this.topCard.clientHeight / 2 ? -1 : 1;
+        }
+
+        const posX = e.deltaX + this.startPosX;
+        const posY = e.deltaY + this.startPosY;
+        const propX = e.deltaX / this.board.clientWidth;
+        const dirX = e.deltaX < 0 ? -1 : 1;
+        const deg = this.isDraggingFrom * dirX * Math.abs(propX) * 45;
+        this.topCard.style.transform = `translate(${posX}px, ${posY}px) rotate(${deg}deg) scale(1)`;
+
+        if (this.nextCard) {
+            const scale = (95 + (5 * Math.abs(propX))) / 100;
+            this.nextCard.style.transform = `translate(-50%, -50%) scale(${scale})`;
+        }
+
+        const thresholdScale = 0.25;
+        let scaleFactor = Math.min(Math.abs(e.deltaX) / (this.topCard.offsetWidth * thresholdScale), 1);
+
+        if (e.deltaX > 0) {
+            likeIcon.style.opacity = scaleFactor;
+            likeIcon.style.transform = `rotate(-20deg) scale(${1 + scaleFactor * 0.5})`;
+            dislikeIcon.style.opacity = 0;
+            likeIcon.style.animation = scaleFactor >= 1 ? 'pulse 0.5s ease-in-out infinite' : 'none';
+        } else if (e.deltaX < 0) {
+            dislikeIcon.style.opacity = scaleFactor;
+            dislikeIcon.style.transform = `rotate(20deg) scale(${1 + scaleFactor * 0.5})`;
+            likeIcon.style.opacity = 0;
+            dislikeIcon.style.animation = scaleFactor >= 1 ? 'pulse 0.5s ease-in-out infinite' : 'none';
+        } else {
+            likeIcon.style.opacity = 0; likeIcon.style.animation = 'none';
+            dislikeIcon.style.opacity = 0; dislikeIcon.style.animation = 'none';
+        }
+
+        if (e.isFinal) {
+            this.isPanning = false;
+            this.topCard.style.transition = "transform 200ms ease-out";
+            if (this.nextCard) this.nextCard.style.transition = "transform 100ms linear";
+
+            const threshold = this.topCard.offsetWidth * 0.25;
+            let result = null;
+            if (e.deltaX > threshold) result = "right";
+            else if (e.deltaX < -threshold) result = "left";
+
+            if (result) {
+                this.topCard.actionTaken = true;
+                const targetX = result === "right" ? window.innerWidth : -window.innerWidth;
+                this.topCard.style.transform = `translateX(${targetX}px) rotate(${deg}deg)`;
+
+                if (result === "right") {
+                    const url = this.topCard.style.backgroundImage.slice(5, -2);
+                    likedCats.push(url);
+                }
+
+                setTimeout(() => {
+                    this.board.removeChild(this.topCard);
+                    this.handle();
+                    if (!this.board.querySelector('.card')) this.showSummary();
+                }, 200);
+            } else {
+                this.topCard.actionTaken = false;
+                this.topCard.style.transform = 'translate(-50%, -50%) rotate(0deg)';
+                if (this.nextCard) this.nextCard.style.transform = 'translate(-50%, -50%) scale(0.95)';
+            }
+
+            likeIcon.style.opacity = 0; likeIcon.style.animation = 'none';
+            dislikeIcon.style.opacity = 0; dislikeIcon.style.animation = 'none';
+        }
+    }
+
+    showSummary() {
+        document.getElementById("board").style.display = "none";
+        document.getElementById("summary").style.display = "block";
+        document.getElementById("like-count").innerText = likedCats.length;
+        const box = document.getElementById("liked-cats");
+        likedCats.forEach(url => {
+            const img = document.createElement("img");
+            img.src = url;
+            box.appendChild(img);
+        });
+    }
+}
+
+new Carousel(document.getElementById('board'), cats);
+</script>
+
+</body>
+</html>
